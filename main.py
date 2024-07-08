@@ -1,40 +1,26 @@
 import requests
 from bs4 import BeautifulSoup
-import re
 from playwright.sync_api import sync_playwright
+import itertools
 
 
-def get_links(url_retrieval):
-    response = requests.get(url_retrieval)
-
-    if response.status_code == 200:
-        print("HTTP request successful.")
-    else:
-        print("Failed to send HTTP request. Status code: ", response.status_code)
+def get_links(url):
+    response = requests.get(url)
+    if response.status_code != 200:
+        print(f"Failed to send HTTP request. Status code: {response.status_code}")
+        return []
 
     link_soup = BeautifulSoup(response.text, 'html.parser')
-    table = link_soup.find('table', attrs={'class': 'table-main'})
-
+    table = link_soup.find('table', class_='table-main')
     if table is None:
-        return get_links_main_page(url_retrieval)
+        return get_links_main_page(url)
 
-    sections = table.find_all('td', attrs={'class': 'h-text-left'})
+    sections = table.find_all('td', class_='h-text-left')
+    if not sections:
+        a_tags = table.find_all('a', class_='in-match')
+        return [{'name': a_tag.text, 'link': a_tag.get('href')} for a_tag in a_tags]
 
-    links = []
-    if len(sections) == 0:
-        a_tags = table.find_all('a', attrs={'class': 'in-match'})
-        for a_tag in a_tags:
-            link = a_tag.get('href')
-            name = a_tag.text
-            links.append({'name': name, 'link': link})
-        return links
-
-    for section in sections:
-        link = section.find('a').attrs['href']
-        name = section.find('a').text
-        links.append({'name': name, 'link': link})
-
-    return links
+    return [{'name': section.find('a').text, 'link': section.find('a').get('href')} for section in sections]
 
 
 def get_links_main_page(url):
@@ -42,78 +28,59 @@ def get_links_main_page(url):
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
         page.goto(url)
-        text = page.get_by_text("All Matches", exact=True)
-        text.wait_for()
-        html = page.content()
-        soup = BeautifulSoup(html, 'html.parser')
+        page.get_by_text("All Matches", exact=True).wait_for()
+        soup = BeautifulSoup(page.content(), 'html.parser')
 
-    main_div = soup.find('div', attrs={'id': 'nr-ko-all'})
-    a_tags = main_div.find_all('a', attrs={'class': 'table-main__participants'})
-
-    links = []
-    for a_tag in a_tags:
-        link = a_tag.attrs['href']
-        name = a_tag.text
-        links.append({'name': name, 'link': link})
-
-    return links
+    main_div = soup.find('div', id='nr-ko-all')
+    a_tags = main_div.find_all('a', class_='table-main__participants')
+    return [{'name': a_tag.text, 'link': a_tag.get('href')} for a_tag in a_tags]
 
 
 def get_odds(link):
-    results = []
-    url = "https://www.betexplorer.com" + link['link']
+    url = f"https://www.betexplorer.com{link['link']}"
     print(url)
     try:
-        with sync_playwright() as p:
+        with (sync_playwright() as p):
             browser = p.chromium.launch(headless=True)
             page = browser.new_page()
             page.goto(url)
-            all_odds = page.get_by_text('All Odds', exact=True)
-            all_odds.wait_for()
-            all_odds.click()
-            html = page.content()
-            soup = BeautifulSoup(html, 'html.parser')
+            page.get_by_text('All Odds', exact=True).wait_for()
+            page.get_by_text('All Odds', exact=True).click()
+            soup = BeautifulSoup(page.content(), 'html.parser')
 
-        table = soup.find('tbody', attrs={'id': 'best-odds-0'})
+        table = soup.find('tbody', id='best-odds-0')
+        if table is None:
+            return []
         entries = table.find_all('tr')
 
+        results = []
         for entry in entries:
-            found_odds = []
-            name = \
-            entry.find('td', attrs={'class': 'h-text-left under-s-only h-text-pl10'}).find('a').find('span').attrs[
-                'title']
-            odds = entry.find_all('td', attrs={'class': 'table-main__detail-odds'})
-            for odd in odds:
-                found_odds.append(odd.find('span').text)
-            results.append({'vendor': name, 'odds': found_odds})
+            name = entry.find('td', class_='h-text-left under-s-only h-text-pl10').find('span').get('title')
+            odds = [odd.find('span').text for odd in entry.find_all('td', class_='table-main__detail-odds')]
+            results.append({'vendor': name, 'odds': odds})
+        return results
+
     except Exception as e:
         print(e)
-
-    return results
+        return []
 
 
 def find_arbitrage_opportunities(data):
-    import itertools
-
     opportunities = []
+    # Limits arbitrage to 3% or more opportunities
+    resolution = 0.97
     try:
-        # Convert odds to float and strip spaces
         for item in data['odds']:
             item['odds'] = [float(od.strip()) for od in item['odds']]
 
-        # Generate all combinations of different vendors
         for combination in itertools.combinations(data['odds'], 3):
             odds1, odds2, odds3 = combination
-
-            # Calculate implied probabilities for each outcome
             prob1 = 1 / odds1['odds'][0]
             prob2 = 1 / odds2['odds'][1]
             prob3 = 1 / odds3['odds'][2]
-
             total_prob = prob1 + prob2 + prob3
 
-            # Check if the total implied probability is less than 1
-            if total_prob < 1:
+            if total_prob < resolution:
                 opportunities.append({
                     'vendors': [odds1['vendor'], odds2['vendor'], odds3['vendor']],
                     'odds': [odds1['odds'][0], odds2['odds'][1], odds3['odds'][2]],
@@ -125,58 +92,78 @@ def find_arbitrage_opportunities(data):
     return opportunities
 
 
-'''
-urls = ["https://www.betexplorer.com/football/england/championship/",
-        "https://www.betexplorer.com/football/england/league-one/",
-        "https://www.betexplorer.com/football/england/premier-league/",
-        "https://www.betexplorer.com/football/england/league-two/",
-        "https://www.betexplorer.com/football/",
-        "https://www.betexplorer.com/",]
-'''
-urls = ["https://www.betexplorer.com/football/england/premier-league/",
-        "https://www.betexplorer.com/football/england/league-two/",
-        "https://www.betexplorer.com/football/",
-        "https://www.betexplorer.com/", ]
-for url in urls:
-    links = get_links(url)
-    results = []
-    print(len(links), "links found")
-    i = 0
-    for link in links:
-        i += 1
-        print(i, "link")
-        odds_results = get_odds(link)
-        results.append({'match': link['name'], 'odds': odds_results})
+def collate_links(urls):
+    all_links = []
+    for url in urls:
+        links = get_links(url)
+        print(f"{len(links)} links found at {url}")
+        all_links.extend(links)
+    return all_links
 
+
+def process_links(links):
     bet_amount = 100
+    results = [{'match': link['name'], 'odds': get_odds(link)} for link in links]
+
     bets = []
     for result in results:
-        output = find_arbitrage_opportunities(result)
-        if len(output) > 0:
+        opportunities = find_arbitrage_opportunities(result)
+        if opportunities:
             print(result['match'].strip())
-            for vendor in output:
-                odds = vendor['odds']
-                inverse_odds_sum = sum([1 / odd for odd in odds])
+            for opp in opportunities:
+                odds = opp['odds']
+                inverse_odds_sum = sum(1 / odd for odd in odds)
                 bet_amounts = [(bet_amount / odd) / inverse_odds_sum for odd in odds]
-
-                # Calculate potential profit
-                potential_profits = [bet_amount / inverse_odds_sum - sum(bet_amounts)] * len(odds)
+                potential_profit = bet_amount / inverse_odds_sum - sum(bet_amounts)
                 bets.append({
-                    'vendors': vendor,
+                    'match': result['match'],
+                    'vendors': opp['vendors'],
                     'odds': odds,
                     'bet_amounts': bet_amounts,
-                    'potential_profits': potential_profits
+                    'potential_profits': potential_profit
                 })
 
+    display_bets(bets)
+    save_bets_to_file(bets)
+
+
+def display_bets(bets):
     for bet in bets:
         print(f"Betting Scenario: {bet['vendors']}")
         for i, vendor in enumerate(bet['vendors']):
             print(f"Bet: {bet['bet_amounts'][i]:.2f} at odds {bet['odds'][i]}")
-        print(f"Potential Profit: {bet['potential_profits'][0]:.2f}\n")
+        print(f"Potential Profit: {bet['potential_profits']:.2f}\n")
 
+
+def save_bets_to_file(bets):
     with open('bets.txt', 'a') as file:
         for bet in bets:
+            file.write(f"{bet['match']}\n")
             file.write(f"Betting Scenario: {bet['vendors']}\n")
             for i, vendor in enumerate(bet['vendors']):
                 file.write(f"Bet: {bet['bet_amounts'][i]:.2f} at odds {bet['odds'][i]}\n")
-            file.write(f"Potential Profit: {bet['potential_profits'][0]:.2f}\n")
+            file.write(f"Potential Profit: {bet['potential_profits']:.2f}\n")
+
+
+if __name__ == "__main__":
+    urls = ["https://www.betexplorer.com/football/england/championship/",
+            "https://www.betexplorer.com/football/england/league-one/",
+            "https://www.betexplorer.com/football/england/premier-league/",
+            "https://www.betexplorer.com/football/england/league-two/",
+            "https://www.betexplorer.com/football/",
+            "https://www.betexplorer.com/football/spain/laliga/",
+            "https://www.betexplorer.com/football/spain/laliga2/",
+            "https://www.betexplorer.com/football/germany/bundesliga/",
+            "https://www.betexplorer.com/football/germany/2-bundesliga/",
+            "https://www.betexplorer.com/football/italy/serie-a/",
+            "https://www.betexplorer.com/football/italy/coppa-italia/",
+            "https://www.betexplorer.com/football/france/ligue-1/",
+            "https://www.betexplorer.com/football/france/ligue-2/",
+            "https://www.betexplorer.com/football/netherlands/eredivisie/",
+            "https://www.betexplorer.com/football/belgium/jupiler-pro-league/",
+            "https://www.betexplorer.com/football/switzerland/super-league/",
+            "https://www.betexplorer.com/football/turkey/super-lig/",
+            "https://www.betexplorer.com/",
+            ]
+    all_links = collate_links(urls)
+    process_links(all_links)
