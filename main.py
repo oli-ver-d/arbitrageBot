@@ -1,7 +1,20 @@
+import asyncio
+import os
+
+import time
 import requests
+import schedule
 from bs4 import BeautifulSoup
 from playwright.sync_api import sync_playwright
 import itertools
+from dotenv import load_dotenv
+from telegram import Bot
+
+load_dotenv()
+API_TOKEN = os.getenv("API_TOKEN")
+CHAT_ID = os.getenv("CHAT_ID")
+
+bot = Bot(token=API_TOKEN)
 
 
 def get_links(url):
@@ -49,9 +62,12 @@ def get_odds(link):
             soup = BeautifulSoup(page.content(), 'html.parser')
 
         table = soup.find('tbody', id='best-odds-0')
-        if table is None:
-            return []
-        entries = table.find_all('tr')
+
+        entries = []
+        for tr in table.find_all('tr'):
+            if tr.get('data-inactive') == "true":
+                continue
+            entries.append(tr)
 
         results = []
         for entry in entries:
@@ -123,47 +139,34 @@ def process_links(links):
                     'potential_profits': potential_profit
                 })
 
-    display_bets(bets)
-    save_bets_to_file(bets)
+    asyncio.run(send_bets(bets))
 
 
-def display_bets(bets):
+async def send_bets(bets):
+    if not bets:
+        await bot.send_message(chat_id=CHAT_ID, text="No arbitrage opportunities found at this time.")
     for bet in bets:
-        print(f"Betting Scenario: {bet['vendors']}")
+        message = f"Match: {bet['match']}\nBetting Scenario: {bet['vendors']}\n"
         for i, vendor in enumerate(bet['vendors']):
-            print(f"Bet: {bet['bet_amounts'][i]:.2f} at odds {bet['odds'][i]}")
-        print(f"Potential Profit: {bet['potential_profits']:.2f}\n")
+            message += f"Bet: {bet['bet_amounts'][i]:.2f} at odds {bet['odds'][i]}\n"
+        message += f"Potential Profit: {bet['potential_profits']:.2f}\n"
+        await bot.send_message(chat_id=CHAT_ID, text=message)
 
 
-def save_bets_to_file(bets):
-    with open('bets.txt', 'a') as file:
-        for bet in bets:
-            file.write(f"{bet['match']}\n")
-            file.write(f"Betting Scenario: {bet['vendors']}\n")
-            for i, vendor in enumerate(bet['vendors']):
-                file.write(f"Bet: {bet['bet_amounts'][i]:.2f} at odds {bet['odds'][i]}\n")
-            file.write(f"Potential Profit: {bet['potential_profits']:.2f}\n")
+def job():
+    urls = [
+        "https://www.betexplorer.com/football/england/championship/",
+        "https://www.betexplorer.com/football/england/league-one/",
+        "https://www.betexplorer.com/football/england/premier-league/",
+        "https://www.betexplorer.com/football/england/league-two/",
+    ]
+    all_links = collate_links(urls)
+    process_links(all_links)
 
 
 if __name__ == "__main__":
-    urls = ["https://www.betexplorer.com/football/england/championship/",
-            "https://www.betexplorer.com/football/england/league-one/",
-            "https://www.betexplorer.com/football/england/premier-league/",
-            "https://www.betexplorer.com/football/england/league-two/",
-            "https://www.betexplorer.com/football/",
-            "https://www.betexplorer.com/football/spain/laliga/",
-            "https://www.betexplorer.com/football/spain/laliga2/",
-            "https://www.betexplorer.com/football/germany/bundesliga/",
-            "https://www.betexplorer.com/football/germany/2-bundesliga/",
-            "https://www.betexplorer.com/football/italy/serie-a/",
-            "https://www.betexplorer.com/football/italy/coppa-italia/",
-            "https://www.betexplorer.com/football/france/ligue-1/",
-            "https://www.betexplorer.com/football/france/ligue-2/",
-            "https://www.betexplorer.com/football/netherlands/eredivisie/",
-            "https://www.betexplorer.com/football/belgium/jupiler-pro-league/",
-            "https://www.betexplorer.com/football/switzerland/super-league/",
-            "https://www.betexplorer.com/football/turkey/super-lig/",
-            "https://www.betexplorer.com/",
-            ]
-    all_links = collate_links(urls)
-    process_links(all_links)
+    schedule.every().hour.do(job)  # Schedules the job to run every hour
+
+    while True:
+        schedule.run_pending()
+        time.sleep(1)
