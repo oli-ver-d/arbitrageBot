@@ -144,7 +144,7 @@ def process_links(links):
 
 async def send_bets(bets):
     if not bets:
-        await bot.send_message(chat_id=CHAT_ID, text="No arbitrage opportunities found at this time.")
+        print("No bets")
     for bet in bets:
         message = f"Match: {bet['match']}\nBetting Scenario: {bet['vendors']}\n"
         for i, vendor in enumerate(bet['vendors']):
@@ -156,17 +156,18 @@ async def send_bets(bets):
 def job():
     urls = [
         "https://www.betexplorer.com/football/england/championship/",
-        "https://www.betexplorer.com/football/england/league-one/",
-        "https://www.betexplorer.com/football/england/premier-league/",
-        "https://www.betexplorer.com/football/england/league-two/",
+        # "https://www.betexplorer.com/football/england/league-one/",
+        # "https://www.betexplorer.com/football/england/premier-league/",
+        # "https://www.betexplorer.com/football/england/league-two/",
     ]
     all_links = collate_links(urls)
     process_links(all_links)
 
 
-if __name__ == "__main__":
-    schedule.every().hour.do(job)  # Schedules the job to run every hour
-
-    while True:
-        schedule.run_pending()
-        time.sleep(1)
+job()
+# if __name__ == "__main__":
+#     schedule.every().hour.do(job)  # Schedules the job to run every hour
+#
+#     while True:
+#         schedule.run_pending()
+#         time.sleep(1)
