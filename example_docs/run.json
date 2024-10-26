@@ -1,0 +1,9 @@
+{
+    "run_id": "UUID",
+    "timestamp": "ISO 8601 timestamp",
+    "game_ids": [
+        "1",
+        "2",
+        "3"
+    ]
+}

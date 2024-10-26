@@ -1,20 +1,15 @@
 import asyncio
 import os
-
+import uuid
 import time
+import datetime
 import requests
 import schedule
 from bs4 import BeautifulSoup
 from playwright.sync_api import sync_playwright
 import itertools
 from dotenv import load_dotenv
-from telegram import Bot
-
-load_dotenv()
-API_TOKEN = os.getenv("API_TOKEN")
-CHAT_ID = os.getenv("CHAT_ID")
-
-bot = Bot(token=API_TOKEN)
+import json
 
 
 def get_links(url):
@@ -47,6 +42,15 @@ def get_links_main_page(url):
     main_div = soup.find('div', id='nr-ko-all')
     a_tags = main_div.find_all('a', class_='table-main__participants')
     return [{'name': a_tag.text, 'link': a_tag.get('href')} for a_tag in a_tags]
+
+
+def collate_links(urls):
+    all_links = []
+    for url in urls:
+        links = get_links(url)
+        print(f"{len(links)} links found at {url}")
+        all_links.extend(links)
+    return all_links
 
 
 def get_odds(link):
@@ -108,50 +112,45 @@ def find_arbitrage_opportunities(data):
     return opportunities
 
 
-def collate_links(urls):
-    all_links = []
-    for url in urls:
-        links = get_links(url)
-        print(f"{len(links)} links found at {url}")
-        all_links.extend(links)
-    return all_links
+def generate_game_json(opportunity, result):
+    return {
+        "game_id": str(uuid.uuid4()),
+        "game_type": "Football",
+        "match": result['match'],
+        "url": result['url'],
+        "timestamp": datetime.datetime.now().isoformat(),
+        "odds": {
+            "1": {
+                "sitename": opportunity['vendors'][0],
+                "odds": opportunity['odds'][0]
+            },
+            "x": {
+                "sitename": opportunity['vendors'][1],
+                "odds": opportunity['odds'][1]
+            },
+            "2": {
+                "sitename": opportunity['vendors'][2],
+                "odds": opportunity['odds'][2]
+            }
+        }
+    }
 
 
 def process_links(links):
-    bet_amount = 100
-    results = [{'match': link['name'], 'odds': get_odds(link)} for link in links]
+    results = [{'match': link['name'],
+                 'url': f"https://www.betexplorer.com{link['link']}",
+                 'odds': get_odds(link)} for link in links]
 
-    bets = []
+    games = []
     for result in results:
         opportunities = find_arbitrage_opportunities(result)
         if opportunities:
             print(result['match'].strip())
             for opp in opportunities:
-                odds = opp['odds']
-                inverse_odds_sum = sum(1 / odd for odd in odds)
-                bet_amounts = [(bet_amount / odd) / inverse_odds_sum for odd in odds]
-                potential_profit = bet_amount / inverse_odds_sum - sum(bet_amounts)
-                bets.append({
-                    'match': result['match'],
-                    'vendors': opp['vendors'],
-                    'odds': odds,
-                    'bet_amounts': bet_amounts,
-                    'potential_profits': potential_profit
-                })
-
-    asyncio.run(send_bets(bets))
-
-
-async def send_bets(bets):
-    if not bets:
-        print("No bets")
-    for bet in bets:
-        message = f"Match: {bet['match']}\nBetting Scenario: {bet['vendors']}\n"
-        for i, vendor in enumerate(bet['vendors']):
-            message += f"Bet: {bet['bet_amounts'][i]:.2f} at odds {bet['odds'][i]}\n"
-        message += f"Potential Profit: {bet['potential_profits']:.2f}\n"
-        await bot.send_message(chat_id=CHAT_ID, text=message)
-
+                games.append(generate_game_json(opp, result))
+    
+    return games
+                
 
 def job():
     urls = [
@@ -161,13 +160,20 @@ def job():
         # "https://www.betexplorer.com/football/england/league-two/",
     ]
     all_links = collate_links(urls)
-    process_links(all_links)
+    games = process_links(all_links)
+    games_ids = [ game['game_id'] for game in games ]
+    run_json = {
+        "run_id": str(uuid.uuid4()),
+        "timestamp": datetime.datetime.now().isoformat(),
+        "game_ids": games_ids
+    }
+
+    with open('output/run.json', 'w') as f:
+        json.dump(run_json, f, indent=1)
+
+    for i, game in enumerate(games):
+        with open(f'output/game{i}.json', 'w') as f:
+            json.dump(game, f, indent=1)
 
 
 job()
-# if __name__ == "__main__":
-#     schedule.every().hour.do(job)  # Schedules the job to run every hour
-#
-#     while True:
-#         schedule.run_pending()
-#         time.sleep(1)
