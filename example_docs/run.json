@@ -1,5 +1,5 @@
 {
-    "run_id": "UUID",
+    "_id": "1",
     "timestamp": "ISO 8601 timestamp",
     "game_ids": [
         "1",

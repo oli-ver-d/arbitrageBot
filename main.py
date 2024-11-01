@@ -2,7 +2,8 @@ import asyncio
 import os
 import uuid
 import time
-import datetime
+from datetime import datetime
+import pymongo
 import requests
 import schedule
 from bs4 import BeautifulSoup
@@ -88,7 +89,7 @@ def get_odds(link):
 def find_arbitrage_opportunities(data):
     opportunities = []
     # Limits arbitrage to 3% or more opportunities
-    resolution = 0.97
+    resolution = 0.99
     try:
         for item in data['odds']:
             item['odds'] = [float(od.strip()) for od in item['odds']]
@@ -114,11 +115,10 @@ def find_arbitrage_opportunities(data):
 
 def generate_game_json(opportunity, result):
     return {
-        "game_id": str(uuid.uuid4()),
         "game_type": "Football",
         "match": result['match'],
         "url": result['url'],
-        "timestamp": datetime.datetime.now().isoformat(),
+        "timestamp": datetime.now(),
         "odds": {
             "1": {
                 "sitename": opportunity['vendors'][0],
@@ -155,25 +155,40 @@ def process_links(links):
 def job():
     urls = [
         "https://www.betexplorer.com/football/england/championship/",
-        # "https://www.betexplorer.com/football/england/league-one/",
-        # "https://www.betexplorer.com/football/england/premier-league/",
-        # "https://www.betexplorer.com/football/england/league-two/",
+        "https://www.betexplorer.com/football/england/league-one/",
+        "https://www.betexplorer.com/football/england/premier-league/",
+        "https://www.betexplorer.com/football/england/league-two/",
+        "https://www.betexplorer.com/football/spain/laliga/",
+        "https://www.betexplorer.com/football/spain/laliga2/",
+        "https://www.betexplorer.com/football/italy/serie-a/",
+        "https://www.betexplorer.com/football/italy/serie-b/",
+        "https://www.betexplorer.com/football/france/ligue-1/",
+        "https://www.betexplorer.com/football/france/ligue-2/",
+        "https://www.betexplorer.com/football/netherlands/eredivisie/",
+        "https://www.betexplorer.com/football/germany/bundesliga/",
+        "https://www.betexplorer.com/football/germany/2-bundesliga/"
     ]
     all_links = collate_links(urls)
+
     games = process_links(all_links)
-    games_ids = [ game['game_id'] for game in games ]
-    run_json = {
-        "run_id": str(uuid.uuid4()),
-        "timestamp": datetime.datetime.now().isoformat(),
-        "game_ids": games_ids
+
+    load_dotenv()
+
+    client = pymongo.MongoClient(os.getenv("mongo_connection"))
+    db = client["arbie"]
+    game_col = db["Games"]
+    run_col = db["Runs"]
+
+    if len(games) > 0:
+        x = game_col.insert_many(games)
+
+    run = {
+        "timestamp": datetime.now(),
+        "game_ids": x.inserted_ids if len(games) > 0 else []
     }
 
-    with open('output/run.json', 'w') as f:
-        json.dump(run_json, f, indent=1)
+    run_col.insert_one(run)
 
-    for i, game in enumerate(games):
-        with open(f'output/game{i}.json', 'w') as f:
-            json.dump(game, f, indent=1)
-
+    print(f"{len(games)} games found")
 
 job()
