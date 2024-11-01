@@ -86,10 +86,11 @@ def get_odds(link):
         return []
 
 
-def find_arbitrage_opportunities(data):
-    opportunities = []
+def find_arbitrage_opportunity(data):
     # Limits arbitrage to 3% or more opportunities
+    opportunity = None
     resolution = 0.99
+    best_prob = 1
     try:
         for item in data['odds']:
             item['odds'] = [float(od.strip()) for od in item['odds']]
@@ -102,15 +103,17 @@ def find_arbitrage_opportunities(data):
             total_prob = prob1 + prob2 + prob3
 
             if total_prob < resolution:
-                opportunities.append({
-                    'vendors': [odds1['vendor'], odds2['vendor'], odds3['vendor']],
-                    'odds': [odds1['odds'][0], odds2['odds'][1], odds3['odds'][2]],
-                    'total_probability': total_prob
-                })
+                if total_prob < best_prob:
+                    best_prob = total_prob
+                    opportunity = {
+                        'vendors': [odds1['vendor'], odds2['vendor'], odds3['vendor']],
+                        'odds': [odds1['odds'][0], odds2['odds'][1], odds3['odds'][2]],
+                        'total_probability': total_prob
+                    }
     except Exception as e:
         print(e)
 
-    return opportunities
+    return opportunity
 
 
 def generate_game_json(opportunity, result):
@@ -143,11 +146,10 @@ def process_links(links):
 
     games = []
     for result in results:
-        opportunities = find_arbitrage_opportunities(result)
-        if opportunities:
+        opportunity = find_arbitrage_opportunity(result)
+        if opportunity:
             print(result['match'].strip())
-            for opp in opportunities:
-                games.append(generate_game_json(opp, result))
+            games.append(generate_game_json(opportunity, result))
     
     return games
                 
