@@ -1,0 +1,22 @@
+{
+    "_id": "1",
+    "game_type": "Football",
+    "match": "Portsmouth vs Sheffield Wed",
+    "url": "https://www.betexplorer.com/football/england/championship/portsmouth-sheffield-wed/rXZSrBdd/",
+    "timestamp": "ISO 8601 timestamp",
+    "odds": {
+        "1": {
+            "sitename": "10bet",
+            "odds": 3.3
+        },
+        "x": {
+            "sitename": "10bet",
+            "odds": 3.3
+        },
+        "2": {
+            "sitename": "10bet",
+            "odds": 3.3
+        }
+    }
+
+}
