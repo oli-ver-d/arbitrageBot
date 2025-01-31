@@ -62,8 +62,9 @@ def get_odds(link):
             browser = p.chromium.launch(headless=True)
             page = browser.new_page()
             page.goto(url)
-            page.get_by_text('All Odds', exact=True).wait_for()
-            page.get_by_text('All Odds', exact=True).click()
+            page.get_by_text('Odds Comparison', exact=True).wait_for()
+            element = page.locator("#sortable-1")
+            element.wait_for()
             soup = BeautifulSoup(page.content(), 'html.parser')
 
         table = soup.find('tbody', id='best-odds-0')
