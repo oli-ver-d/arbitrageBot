@@ -3,7 +3,7 @@ import os
 import uuid
 import time
 from datetime import datetime
-import pymongo
+# import pymongo
 import requests
 import schedule
 from bs4 import BeautifulSoup
@@ -176,21 +176,24 @@ def job():
 
     load_dotenv()
 
-    client = pymongo.MongoClient(os.getenv("mongo_connection"))
-    db = client["arbie"]
-    game_col = db["Games"]
-    run_col = db["Runs"]
+    for game in games:
+        print(game)
 
-    if len(games) > 0:
-        x = game_col.insert_many(games)
+    # client = pymongo.MongoClient(os.getenv("mongo_connection"))
+    # db = client["arbie"]
+    # game_col = db["Games"]
+    # run_col = db["Runs"]
 
-    run = {
-        "timestamp": datetime.now(),
-        "game_ids": x.inserted_ids if len(games) > 0 else []
-    }
+    # if len(games) > 0:
+    #     x = game_col.insert_many(games)
 
-    run_col.insert_one(run)
+    # run = {
+    #     "timestamp": datetime.now(),
+    #     "game_ids": x.inserted_ids if len(games) > 0 else []
+    # }
 
-    print(f"{len(games)} games found")
+    # run_col.insert_one(run)
+
+    # print(f"{len(games)} games found")
 
 job()
